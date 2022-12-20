@@ -13,16 +13,16 @@ import (
 
 	"github.com/ethereum/go-ethereum/crypto"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/waku-org/go-waku/waku/v2/node"
-	"github.com/waku-org/go-waku/waku/v2/protocol"
 	"github.com/waku-org/go-waku/waku/v2/protocol/pb"
-	"github.com/waku-org/go-waku/waku/v2/utils"
+	"github.com/waku-org/go-waku/waku/v2/protocol/store"
 )
 
 var log = logging.Logger("basic2")
 
 func main() {
-	lvl, err := logging.LevelFromString("info")
+	lvl, err := logging.LevelFromString("error")
 	if err != nil {
 		panic(err)
 	}
@@ -59,8 +59,76 @@ func main() {
 		return
 	}
 
-	go writeLoop(ctx, wakuNode)
-	go readLoop(ctx, wakuNode)
+	nodes := []string{
+		"/dns4/node-01.ac-cn-hongkong-c.status.prod.statusim.net/tcp/30303/p2p/16Uiu2HAkvEZgh3KLwhLwXg95e5ojM8XykJ4Kxi2T7hk22rnA7pJC",
+		"/dns4/node-01.do-ams3.status.prod.statusim.net/tcp/30303/p2p/16Uiu2HAm6HZZr7aToTvEBPpiys4UxajCTU97zj5v7RNR2gbniy1D",
+		"/dns4/node-01.gc-us-central1-a.status.prod.statusim.net/tcp/30303/p2p/16Uiu2HAkwBp8T6G77kQXSNMnxgaMky1JeyML5yqoTHRM8dbeCBNb",
+		"/dns4/node-02.ac-cn-hongkong-c.status.prod.statusim.net/tcp/30303/p2p/16Uiu2HAmFy8BrJhCEmCYrUfBdSNkrPw6VHExtv4rRp1DSBnCPgx8",
+		"/dns4/node-02.do-ams3.status.prod.statusim.net/tcp/30303/p2p/16Uiu2HAmSve7tR5YZugpskMv2dmJAsMUKmfWYEKRXNUxRaTCnsXV",
+		"/dns4/node-02.gc-us-central1-a.status.prod.statusim.net/tcp/30303/p2p/16Uiu2HAmDQugwDHM3YeUp86iGjrUvbdw3JPRgikC7YoGBsT2ymMg",
+	}
+	peerIDs := []string{
+		"16Uiu2HAkvEZgh3KLwhLwXg95e5ojM8XykJ4Kxi2T7hk22rnA7pJC",
+		"16Uiu2HAm6HZZr7aToTvEBPpiys4UxajCTU97zj5v7RNR2gbniy1D",
+		"16Uiu2HAkwBp8T6G77kQXSNMnxgaMky1JeyML5yqoTHRM8dbeCBNb",
+		"16Uiu2HAmFy8BrJhCEmCYrUfBdSNkrPw6VHExtv4rRp1DSBnCPgx8",
+		"16Uiu2HAmSve7tR5YZugpskMv2dmJAsMUKmfWYEKRXNUxRaTCnsXV",
+		"16Uiu2HAmDQugwDHM3YeUp86iGjrUvbdw3JPRgikC7YoGBsT2ymMg",
+	}
+
+	fmt.Println("Connecting to nodes....")
+	for _, n := range nodes {
+		err := wakuNode.DialPeer(context.Background(), n)
+		if err != nil {
+			fmt.Println("Could not connect to ", n, err)
+		}
+	}
+
+	fmt.Println("Waiting for mesh to form....")
+	time.Sleep(3 * time.Second) // Wait some time for mesh to form
+
+	contentTopic, err := randomHex(20)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	msg := &pb.WakuMessage{
+		Payload:      []byte{0x01, 0x02, 0x03},
+		Timestamp:    wakuNode.Timesource().Now().UnixNano(),
+		ContentTopic: contentTopic,
+		Version:      0,
+	}
+
+	msgId, err := wakuNode.Relay().Publish(context.Background(), msg)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	fmt.Println("THE MESSAGE ID: ", hex.EncodeToString(msgId))
+
+	time.Sleep(3 * time.Second) // Wait some time for storenodes to insert message
+
+	for _, p := range peerIDs {
+
+		peerID, _ := peer.Decode(p)
+
+		result, err := wakuNode.Store().Query(context.Background(), store.Query{
+			ContentTopics: []string{contentTopic},
+			StartTime:     wakuNode.Timesource().Now().UnixNano() - int64(30*time.Second),
+		}, store.WithPeer(peerID))
+		if err != nil {
+			fmt.Println("STORE ERROR", peerID, err)
+			continue
+		}
+
+		if len(result.Messages) != 1 {
+			fmt.Println("NO MESSAGES", peerID, err)
+			continue
+		}
+
+		msgHash, _, _ := result.Messages[0].Hash()
+		fmt.Println("MessageID: ", hex.EncodeToString(msgHash), " on peer: ", peerID)
+	}
 
 	// Wait for a SIGINT or SIGTERM signal
 	ch := make(chan os.Signal, 1)
@@ -79,58 +147,4 @@ func randomHex(n int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
-}
-
-func write(ctx context.Context, wakuNode *node.WakuNode, msgContent string) {
-	contentTopic := protocol.NewContentTopic("basic2", 1, "test", "proto")
-
-	var version uint32 = 0
-	var timestamp int64 = utils.GetUnixEpoch(wakuNode.Timesource())
-
-	p := new(node.Payload)
-	p.Data = []byte(wakuNode.ID() + ": " + msgContent)
-	p.Key = &node.KeyInfo{Kind: node.None}
-
-	payload, err := p.Encode(version)
-	if err != nil {
-		log.Error("Error encoding the payload: ", err)
-		return
-	}
-
-	msg := &pb.WakuMessage{
-		Payload:      payload,
-		Version:      version,
-		ContentTopic: contentTopic.String(),
-		Timestamp:    timestamp,
-	}
-
-	_, err = wakuNode.Relay().Publish(ctx, msg)
-	if err != nil {
-		log.Error("Error sending a message: ", err)
-	}
-}
-
-func writeLoop(ctx context.Context, wakuNode *node.WakuNode) {
-	for {
-		time.Sleep(2 * time.Second)
-		write(ctx, wakuNode, "Hello world!")
-	}
-}
-
-func readLoop(ctx context.Context, wakuNode *node.WakuNode) {
-	sub, err := wakuNode.Relay().Subscribe(ctx)
-	if err != nil {
-		log.Error("Could not subscribe: ", err)
-		return
-	}
-
-	for value := range sub.C {
-		payload, err := node.DecodePayload(value.Message(), &node.KeyInfo{Kind: node.None})
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		log.Info("Received msg, ", string(payload.Data))
-	}
 }

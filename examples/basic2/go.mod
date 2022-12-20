@@ -9,6 +9,7 @@ replace github.com/ethereum/go-ethereum v1.10.25 => github.com/status-im/go-ethe
 require (
 	github.com/ethereum/go-ethereum v1.10.25
 	github.com/ipfs/go-log/v2 v2.5.1
+	github.com/libp2p/go-libp2p v0.23.2
 	github.com/waku-org/go-waku v0.2.3-0.20221109195301-b2a5a68d28ba
 )
 
@@ -65,7 +66,6 @@ require (
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-cidranger v1.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.1.0 // indirect
-	github.com/libp2p/go-libp2p v0.23.2 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.2.0 // indirect
 	github.com/libp2p/go-libp2p-pubsub v0.8.1 // indirect
 	github.com/libp2p/go-mplex v0.7.0 // indirect
@@ -125,7 +125,6 @@ require (
 	github.com/tyler-smith/go-bip39 v1.0.1-0.20181017060643-dbb3b84ba2ef // indirect
 	github.com/waku-org/go-discover v0.0.0-20221209174356-61c833f34d98 // indirect
 	github.com/waku-org/go-zerokit-rln v0.1.7-wakuorg // indirect
-	github.com/waku-org/noise v1.0.2 // indirect
 	github.com/whyrusleeping/timecache v0.0.0-20160911033111-cfcb2f1abfee // indirect
 	go.opencensus.io v0.23.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
